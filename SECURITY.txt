@@ -1,0 +1,3 @@
+Contact: https://github.com/chayprabs/video-thumbnail-tool/security/advisories/new
+Preferred-Languages: en
+Canonical: https://github.com/chayprabs/video-thumbnail-tool/blob/main/SECURITY.txt

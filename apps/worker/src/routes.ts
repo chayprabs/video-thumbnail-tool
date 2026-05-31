@@ -1,7 +1,8 @@
 import { createReadStream } from 'node:fs';
-import { readdir, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { join, extname } from 'node:path';
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { stream } from 'hono/streaming';
 import type {
   ConcatRequest,
@@ -30,6 +31,8 @@ import {
 } from './ffmpeg.js';
 
 const app = new Hono();
+
+app.use('*', cors({ origin: '*', allowMethods: ['GET', 'POST', 'OPTIONS'] }));
 
 async function saveUpload(file: File, dest: string): Promise<void> {
   const buf = Buffer.from(await file.arrayBuffer());
@@ -240,9 +243,6 @@ app.post('/v1/edit-list', async (c) => {
 
 const artifactStore = new Map<string, string>();
 
-app.use('/v1/artifacts/*', async (c, next) => {
-  await next();
-});
 
 // Store artifact paths in-memory keyed by job (simplified; production would use object storage)
 export function registerArtifact(jobId: string, name: string, path: string): void {

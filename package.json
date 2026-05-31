@@ -12,13 +12,14 @@
     "dev": "pnpm -r --parallel run dev",
     "lint": "pnpm -r run lint",
     "typecheck": "pnpm -r run typecheck",
-    "test": "pnpm -r run test",
+    "test": "vitest run",
     "format": "prettier --write ."
   },
   "devDependencies": {
     "@types/node": "^22.13.10",
     "prettier": "^3.5.3",
-    "typescript": "^5.8.2"
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.9"
   },
   "packageManager": "pnpm@10.33.3"
 }
