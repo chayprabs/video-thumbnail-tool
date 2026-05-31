@@ -8,6 +8,7 @@ export const metadata: Metadata = {
   title: 'ClipTools — Online Video Trim, Thumbnails & Sprite Sheets',
   description:
     'Trim, concat, remux video and generate thumbnails, contact sheets, sprite sheets and shot boundaries online with FFmpeg.',
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'),
   keywords: [
     'video',
     'ffmpeg',
@@ -27,9 +28,26 @@ export const metadata: Metadata = {
   },
 };
 
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'WebApplication',
+  name: 'ClipTools',
+  applicationCategory: 'MultimediaApplication',
+  operatingSystem: 'Any',
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+  description:
+    'Trim, concat, remux video and generate thumbnails, contact sheets, sprite sheets and shot boundaries online with FFmpeg.',
+};
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
+      <head>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      </head>
       <body className="flex min-h-screen flex-col">
         <TopBar />
         <SeoBar />

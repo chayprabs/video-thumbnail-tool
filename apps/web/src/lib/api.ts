@@ -1,12 +1,20 @@
 import type { ApiResponse, ProbeResult, ShotResult } from '@clip-tools/shared-types';
 
+/** Proxied to worker via next.config rewrites (/api/v1/*). */
 const API_BASE = '/api';
 
 export async function apiPost<T>(
   endpoint: string,
   file: File | File[],
   payload?: unknown,
-): Promise<ApiResponse<T> & { jobId?: string; artifacts?: Array<{ filename: string; mimeType: string; url: string }>; warned?: boolean }> {
+): Promise<
+  ApiResponse<T> & {
+    jobId?: string;
+    artifacts?: Array<{ filename: string; mimeType: string; url: string }>;
+    warned?: boolean;
+    transcoded?: boolean;
+  }
+> {
   const form = new FormData();
   if (Array.isArray(file)) {
     file.forEach((f) => form.append('files', f));

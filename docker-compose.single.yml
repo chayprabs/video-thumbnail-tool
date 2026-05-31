@@ -1,0 +1,15 @@
+# All-in-one local stack (build from repo root)
+services:
+  clip-tools:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    ports:
+      - '8787:8787'
+    environment:
+      PORT: 8787
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:8787/health']
+      interval: 30s
+      timeout: 5s
+      retries: 3

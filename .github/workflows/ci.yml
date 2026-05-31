@@ -39,6 +39,17 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Start worker for integration tests
+        run: |
+          pnpm --filter @clip-tools/worker start &
+          sleep 3
+          curl -sf http://localhost:8787/health
+
+      - name: Integration tests
+        run: pnpm test:integration
+        env:
+          WORKER_URL: http://localhost:8787
+
       - name: Build web
         run: pnpm --filter @clip-tools/web build
         env:

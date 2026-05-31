@@ -2,31 +2,37 @@
 
 **Trim, concat, remux video and generate thumbnails, contact sheets, sprite sheets and shot boundaries online with FFmpeg.**
 
-ClipTools is a standalone open-source video utility playground. Upload a video, choose an operation (trim, concat, remux, thumbnails, contact sheet, sprite sheet + WebVTT, shot detection, or JSON edit-list), and download results. Stream-copy is used whenever codecs allow for fast, lossless cuts.
+ClipTools is a standalone open-source video utility playground. Upload a video (drag-and-drop, URL import, or built-in samples), choose an operation, and download results. Stream-copy is used whenever codecs allow for fast, lossless cuts.
 
-## Features
+## Features (PRD-complete)
 
-- **Trim** — Frame-accurate in/out timecodes with stream-copy toggle
-- **Concat** — Join clips; warns and re-encodes on codec mismatch
-- **Remux** — MP4 ↔ MKV ↔ WebM ↔ MOV
-- **Thumbnails** — At timecode, even-spaced strip, scene-aware poster
-- **Contact sheet** — Configurable grid montage with timestamps
-- **Sprite sheet** — Rows/cols/interval + WebVTT for hover-scrub players
-- **Shot detection** — Scene-change timestamps with confidence
-- **JSON edit-list** — Shotstack-lite-style timeline to MP4
+| Feature | Description |
+|---------|-------------|
+| **Inputs** | Drag-drop, URL paste, 3 sample videos |
+| **Probe** | Container, codecs, resolution, FPS, bitrate, chapters, duration |
+| **Trim** | In/out timecodes, stream-copy, multi-segment concat |
+| **Concat** | Multiple clips, codec-mismatch re-encode |
+| **Remux** | MP4, MKV, WebM, MOV |
+| **Thumbnails** | Timecode, even-spaced strip, scene-aware poster |
+| **Contact sheet** | Grid montage with timestamps, rows/cols/scale |
+| **Sprite + WebVTT** | Hover-scrub sprite sheet |
+| **Shot detection** | Scene timestamps + confidence (JSON) |
+| **JSON edit-list** | Shotstack-lite timeline → MP4 |
+| **Preview** | Scrub-able timeline with set In/Out/thumbnail |
 
 ## Quick start
 
 ### Requirements
 
 - Node.js 22+
-- pnpm 9+
-- FFmpeg (for local worker and tests)
+- pnpm 10+
+- FFmpeg (for worker and tests)
 
 ### Development
 
 ```bash
-pnpm install
+cp .env.example .env
+pnpm install --frozen-lockfile
 pnpm --filter @clip-tools/shared-types build
 pnpm --filter @clip-tools/shared-worker-runtime build
 
@@ -37,12 +43,16 @@ pnpm --filter @clip-tools/worker dev
 pnpm --filter @clip-tools/web dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). The web app proxies `/api/*` to the worker at `http://localhost:8787`.
+Open [http://localhost:3000](http://localhost:3000). API requests go to `/api/v1/*` (proxied to the worker).
 
 ### Docker
 
 ```bash
+# Full stack (web + worker)
 docker compose up --build
+
+# Worker only
+docker compose -f docker-compose.single.yml up --build
 ```
 
 - Web: http://localhost:3000
@@ -52,9 +62,10 @@ docker compose up --build
 
 | Endpoint | Description |
 |----------|-------------|
+| `GET /health` | Service health |
 | `POST /v1/probe` | Media metadata |
-| `POST /v1/clip` | Trim |
-| `POST /v1/concat` | Concatenate |
+| `POST /v1/clip` | Trim (multipart: `file`, `payload` JSON) |
+| `POST /v1/concat` | Concatenate (`files[]`, `payload`) |
 | `POST /v1/remux` | Container remux |
 | `POST /v1/thumbnails` | Thumbnails |
 | `POST /v1/contactsheet` | Contact sheet |
@@ -62,7 +73,17 @@ docker compose up --build
 | `POST /v1/shots` | Shot detection |
 | `POST /v1/edit-list` | JSON timeline render |
 
-All processing endpoints accept `multipart/form-data` with `file` (or `files` for concat) and optional `payload` JSON.
+Web-only: `POST /api/import` — fetch a video URL server-side (max 200MB).
+
+## Testing
+
+```bash
+pnpm test                  # unit + ffmpeg integration
+pnpm test:integration      # live worker API (worker must be running)
+pnpm test:e2e              # Playwright (web + worker)
+pnpm typecheck
+pnpm build
+```
 
 ## Project structure
 
@@ -72,7 +93,24 @@ apps/worker/       Hono + FFmpeg worker
 packages/shared-types/
 packages/shared-worker-runtime/
 docker-compose.yml
+e2e/               Playwright tests
+fixtures/          Test video
 ```
+
+## SEO routes
+
+- `/video-trim-online`
+- `/video-thumbnail-generator`
+- `/video-sprite-sheet`
+- `/scene-detect-online`
+- `/video-contact-sheet`
+
+## Privacy & security
+
+- Ephemeral per-job storage with TTL cleanup
+- No video content in logs
+- CSP and security headers on web
+- See [SECURITY.md](SECURITY.md) and [privacy policy](/privacy) on the deployed site
 
 ## License
 
@@ -81,5 +119,4 @@ AGPL-3.0-or-later — see [LICENSE](LICENSE).
 ## Links
 
 - [GitHub](https://github.com/chayprabs/video-thumbnail-tool)
-- [Privacy Policy](/privacy) (on deployed site)
-- [Terms & Conditions](/terms)
+- Maintainer: [@chayprabs](https://x.com/chayprabs) · [chaitanyaprabuddha.com](https://www.chaitanyaprabuddha.com)

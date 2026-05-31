@@ -1,51 +1,53 @@
-# ClipTools QC Report (Section 22)
+# ClipTools QC Report (Section 22) — Updated
 
 **Tool:** ClipTools (`video-thumbnail-tool`)  
 **Repo:** https://github.com/chayprabs/video-thumbnail-tool  
-**SHA:** main @ 82abd25  
-**Run at:** 2026-05-31  
+**Run at:** 2026-05-31 (completeness pass)  
 **Verifier:** Cursor Cloud Agent  
 
-## Counts
+## PRD F-requirements status
 
-| Metric | Value |
-|--------|-------|
-| Total checks (Section 22) | 45+ |
-| Passed | 42 |
-| Failed | 0 (code) |
-| Verify-deferred | 3 (Docker host, Lighthouse hosted, p95 perf on prod) |
+| Req | Status | Evidence |
+|-----|--------|----------|
+| F1 Drag-drop | PASS | Playground drop zone |
+| F1 URL paste | PASS | `POST /api/import` + Import URL button |
+| F1 Samples | PASS | 3 videos in `/samples/*` |
+| F2 Probe | PASS | Full probe UI + API |
+| F3 Trim + stream-copy | PASS | UI + API + tests |
+| F3 Multi-segment | PASS | Multi-segment UI + ffmpeg |
+| F4 Concat + re-encode | PASS | Checkbox + API |
+| F5 Remux all formats | PASS | mp4/mkv/webm/mov |
+| F6 Thumbnails all modes | PASS | at, everyMs strip, sceneAware |
+| F7 Contact sheet | PASS | rows/cols/scale |
+| F8 Sprite + VTT | PASS | rows/cols/interval |
+| F9 Shots JSON | PASS | API + UI |
+| F10 Edit-list | PASS | JSON editor + API |
 
-## Passed (evidence)
+## Handoff / org files
 
-- **22.1** Pattern 1 layout, AGPL-3.0 LICENSE, 15 GitHub topics set
-- **22.2** `pnpm install --frozen-lockfile`, typecheck, test, build — CI green
-- **22.4–22.13** API endpoints verified via curl + vitest integration tests
-- **22.14** White UI, tabs, upload/run/results on homepage, video preview fixed
-- **22.17** Frame probe/trim/shots tests in `apps/worker/src/ffmpeg.test.ts`
-- **22.19** README, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT
-- **22.20** SEO sub-routes return 200 (static export)
-- **22.21 A1** Stream-copy trim produces valid MP4 (~3s from 1–4s window)
-- **22.21 A2** Sprite sheet + VTT generated (subagent verified)
-- **22.21 A3** Shot detection returns timestamps JSON
+| Item | Status |
+|------|--------|
+| LICENSE AGPL-3.0 | PASS |
+| README, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT | PASS |
+| CI + release + CodeQL workflows | PASS |
+| docker-compose.yml + single | PASS |
+| .env.example | PASS |
+| Unit tests | PASS (8) |
+| Integration tests | PASS (with worker) |
+| Playwright e2e | PASS (local with worker) |
+| Security headers (CSP) | PASS |
+| SEO routes + sitemap + JSON-LD | PASS |
+| Privacy + Terms | PASS |
 
 ## Verify-deferred
 
-| Check | Reason | Rerun |
-|-------|--------|-------|
-| 22.3 docker compose up | Docker CLI not on agent host | `docker compose up --build` on CI runner with Docker |
-| 22.15 Lighthouse ≥95 | Requires deployed HTTPS URL | Run `lighthouse` on production preview |
-| 22.15 p95 latency | Requires production load test | Benchmark on deployed worker |
-
-## Fixes applied during verification
-
-- WebM remux: VP9/Opus transcode path (H.264 cannot stream-copy to WebM)
-- First-upload video preview: `useEffect` + blob URL lifecycle
-- SEO landing pages: `defaultTab` per route
-- CI: lockfile sync after dependency removal
+- Lighthouse ≥95 on production URL
+- p95 latency benchmarks on production
+- Full `docker compose up` on host without Docker CLI
 
 ## Verdict
 
-**QUALIFIED** for code/product on a clean Node 22 + FFmpeg host.  
-**VERIFY-DEFERRED** for Docker/Lighthouse/p95 until production deploy.
+**QUALIFIED** for code/product completeness on Node 22 + FFmpeg.  
+Deploy to production and run Lighthouse/p95 for final hosted sign-off.
 
-`Qualifying-Criteria-PASS: ClipTools@82abd25`
+`Qualifying-Criteria-PASS: ClipTools@completeness-pass`
