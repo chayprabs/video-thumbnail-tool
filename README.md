@@ -105,16 +105,18 @@ fixtures/          Test video
 - `/scene-detect-online`
 - `/video-contact-sheet`
 
-## Privacy & security
+## Privacy, terms & legal
 
-- Ephemeral per-job storage with TTL cleanup
-- No video content in logs
-- CSP and security headers on web
-- See [SECURITY.md](SECURITY.md) and [privacy policy](/privacy) on the deployed site
+- [Privacy Policy](apps/web/src/app/privacy/page.tsx) — data handling for the hosted service
+- [Terms & Conditions](apps/web/src/app/terms/page.tsx) — acceptable use, disclaimers, liability limits, indemnification
+- [Legal summary](docs/LEGAL.md) — how AGPL (code) differs from hosted Terms (website)
+- [SECURITY.md](SECURITY.md) — vulnerability reporting
+
+Hosted use is at your own risk. Outputs are not guaranteed accurate or rights-cleared for commercial use.
 
 ## License
 
-AGPL-3.0-or-later — see [LICENSE](LICENSE).
+Source code: **AGPL-3.0-or-later** — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
 ## Links
 

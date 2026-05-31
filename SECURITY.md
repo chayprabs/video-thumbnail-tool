@@ -22,3 +22,7 @@ Do not open public issues for undisclosed vulnerabilities.
 
 - Self-hosted deployments with modified configuration
 - Issues in upstream FFmpeg itself (report to FFmpeg project)
+
+## Legal
+
+Security reports are handled in good faith. Nothing in this policy creates a warranty or expands our liability beyond the [Terms & Conditions](apps/web/src/app/terms/page.tsx).

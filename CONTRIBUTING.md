@@ -20,6 +20,12 @@ Thank you for your interest in contributing.
 - Prettier for formatting
 - Match existing patterns in `apps/worker` and `apps/web`
 
-## License
+## License and legal
 
-By contributing, you agree that your contributions will be licensed under AGPL-3.0-or-later.
+By contributing, you represent that:
+
+- Your contribution is your original work or you have permission to submit it.
+- You grant your contribution under **AGPL-3.0-or-later**.
+- You understand the project is provided **without warranty** and that you will not hold the operator or other contributors liable beyond what applicable law requires.
+
+See [LICENSE](LICENSE), [docs/LEGAL.md](docs/LEGAL.md), and the hosted [Terms](apps/web/src/app/terms/page.tsx) for context.

@@ -1,0 +1,10 @@
+ClipTools (video-thumbnail-tool)
+Copyright (C) 2026 Chaitanya Prabuddha
+
+Licensed under AGPL-3.0-or-later. See LICENSE file.
+
+Hosted service Terms: apps/web/src/app/terms/page.tsx
+Privacy Policy: apps/web/src/app/privacy/page.tsx
+Additional legal summary: docs/LEGAL.md
+
+Third-party components include FFmpeg (https://ffmpeg.org/) and their respective licenses.
