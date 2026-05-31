@@ -1,10 +1,10 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ProbeResult, ShotResult } from '@clip-tools/shared-types';
 import { apiPost, artifactDownloadUrl, probeVideo } from '@/lib/api';
 
-type Operation =
+export type Operation =
   | 'trim'
   | 'concat'
   | 'remux'
@@ -25,8 +25,8 @@ const TABS: { id: Operation; label: string }[] = [
   { id: 'editlist', label: 'JSON Edit' },
 ];
 
-export function Playground() {
-  const [tab, setTab] = useState<Operation>('trim');
+export function Playground({ defaultTab = 'trim' }: { defaultTab?: Operation }) {
+  const [tab, setTab] = useState<Operation>(defaultTab);
   const [file, setFile] = useState<File | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [probe, setProbe] = useState<ProbeResult | null>(null);
@@ -35,6 +35,7 @@ export function Playground() {
   const [results, setResults] = useState<Array<{ name: string; url: string; type: string }>>([]);
   const [jsonOut, setJsonOut] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const objectUrlRef = useRef<string | null>(null);
 
   const [trimIn, setTrimIn] = useState('00:00:00');
   const [trimOut, setTrimOut] = useState('00:00:10');
@@ -57,14 +58,25 @@ export function Playground() {
     ),
   );
 
+  useEffect(() => {
+    if (!file || !videoRef.current) return;
+    if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+    const url = URL.createObjectURL(file);
+    objectUrlRef.current = url;
+    videoRef.current.src = url;
+    return () => {
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = null;
+      }
+    };
+  }, [file]);
+
   const onFile = useCallback(async (f: File) => {
     setFile(f);
     setError(null);
     setResults([]);
     setJsonOut(null);
-    if (videoRef.current) {
-      videoRef.current.src = URL.createObjectURL(f);
-    }
     try {
       const p = await probeVideo(f);
       setProbe(p);
@@ -77,8 +89,9 @@ export function Playground() {
           `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`,
         );
       }
-    } catch {
+    } catch (e) {
       setProbe(null);
+      setError(e instanceof Error ? e.message : 'Could not probe video');
     }
   }, []);
 
@@ -190,7 +203,13 @@ export function Playground() {
           break;
         }
         case 'editlist': {
-          const res = await apiPost('/v1/edit-list', file, JSON.parse(editJson));
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(editJson);
+          } catch {
+            throw new Error('Invalid JSON in edit-list editor');
+          }
+          const res = await apiPost('/v1/edit-list', file, parsed);
           if (!res.ok) throw new Error(res.error);
           setResults(
             (res.artifacts ?? []).map((a) => ({
@@ -419,6 +438,9 @@ export function Playground() {
                 {r.type.startsWith('image') && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={r.url} alt={r.name} className="mb-2 max-h-48 rounded border" />
+                )}
+                {r.type.startsWith('video') && (
+                  <video src={r.url} controls className="mb-2 max-h-48 rounded border" />
                 )}
                 <a
                   href={r.url}

@@ -6,5 +6,5 @@ export const metadata = {
 };
 
 export default function ThumbnailPage() {
-  return <Playground />;
+  return <Playground defaultTab="thumbnail" />;
 }

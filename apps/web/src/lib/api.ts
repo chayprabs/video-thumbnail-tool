@@ -16,6 +16,15 @@ export async function apiPost<T>(
   if (payload) form.append('payload', JSON.stringify(payload));
 
   const res = await fetch(`${API_BASE}${endpoint}`, { method: 'POST', body: form });
+  if (!res.ok) {
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text) as ApiResponse<T>;
+      return { ...parsed, ok: false };
+    } catch {
+      throw new Error(text || `Request failed (${res.status})`);
+    }
+  }
   return res.json();
 }
 
@@ -33,5 +42,5 @@ export async function detectShots(file: File): Promise<ShotResult[]> {
 
 export function artifactDownloadUrl(url: string): string {
   if (url.startsWith('http')) return url;
-  return `${API_BASE}${url.replace('/v1', '/v1')}`;
+  return `${API_BASE}${url}`;
 }

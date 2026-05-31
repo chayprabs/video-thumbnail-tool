@@ -6,5 +6,5 @@ export const metadata = {
 };
 
 export default function VideoTrimPage() {
-  return <Playground />;
+  return <Playground defaultTab="trim" />;
 }

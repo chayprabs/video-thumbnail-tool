@@ -6,5 +6,5 @@ export const metadata = {
 };
 
 export default function ContactSheetPage() {
-  return <Playground />;
+  return <Playground defaultTab="contactsheet" />;
 }

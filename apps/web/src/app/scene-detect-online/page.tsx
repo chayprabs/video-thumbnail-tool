@@ -6,5 +6,5 @@ export const metadata = {
 };
 
 export default function SceneDetectPage() {
-  return <Playground />;
+  return <Playground defaultTab="shots" />;
 }

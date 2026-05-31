@@ -119,9 +119,10 @@ app.post('/v1/remux', async (c) => {
   try {
     await saveUpload(file, ctx.inputPath);
     const out = join(ctx.outputDir, `remux.${body.format}`);
-    await remuxVideo(ctx.inputPath, out, body);
+    const { transcoded } = await remuxVideo(ctx.inputPath, out, body);
     return c.json({
       ok: true,
+      transcoded,
       jobId: ctx.jobId,
       artifacts: [{ filename: `remux.${body.format}`, mimeType: 'video/mp4', url: artifactUrl(ctx.jobId, `remux.${body.format}`) }],
     });

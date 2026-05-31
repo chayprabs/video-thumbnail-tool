@@ -145,9 +145,35 @@ export async function remuxVideo(
   inputPath: string,
   outputPath: string,
   req: RemuxRequest,
-): Promise<void> {
+): Promise<{ transcoded: boolean }> {
   const fmt = FORMAT_MAP[req.format];
-  await runFfmpeg(['-i', inputPath, '-c', 'copy', '-f', fmt, outputPath]);
+
+  if (req.format === 'webm') {
+    await runFfmpeg([
+      '-i',
+      inputPath,
+      '-c:v',
+      'libvpx-vp9',
+      '-crf',
+      '30',
+      '-b:v',
+      '0',
+      '-c:a',
+      'libopus',
+      '-f',
+      'webm',
+      outputPath,
+    ]);
+    return { transcoded: true };
+  }
+
+  try {
+    await runFfmpeg(['-i', inputPath, '-c', 'copy', '-f', fmt, outputPath]);
+    return { transcoded: false };
+  } catch {
+    await runFfmpeg(['-i', inputPath, '-c:v', 'libx264', '-c:a', 'aac', '-f', fmt, outputPath]);
+    return { transcoded: true };
+  }
 }
 
 export async function generateThumbnails(
