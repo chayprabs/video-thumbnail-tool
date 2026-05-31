@@ -1,0 +1,9 @@
+HTTP/1.1 200 OK
+access-control-allow-origin: *
+content-disposition: attachment; filename="trimmed.mp4"
+content-type: video/mp4
+Date: Sun, 31 May 2026 13:10:10 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+Transfer-Encoding: chunked
+

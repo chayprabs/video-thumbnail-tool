@@ -198,10 +198,11 @@ export function Playground({ defaultTab = 'trim' }: { defaultTab?: Operation }) 
 
       switch (tab) {
         case 'trim': {
+          if (multiTrim && segments.length === 0) {
+            throw new Error('Add at least one segment or disable multi-segment mode');
+          }
           const trimSegments: TrimSegment[] = multiTrim
-            ? segments.length > 0
-              ? segments
-              : [{ in: trimIn, out: trimOut }]
+            ? segments
             : [{ in: trimIn, out: trimOut }];
           const res = await apiPost('/v1/clip', file, {
             segments: trimSegments,
@@ -237,6 +238,9 @@ export function Playground({ defaultTab = 'trim' }: { defaultTab?: Operation }) 
           if (sceneAwareThumb) payload.sceneAware = true;
           const res = await apiPost('/v1/thumbnails', file, payload);
           if (!res.ok) throw new Error(res.error);
+          if (res.warned) {
+            setJsonOut('Note: no scene cut found — used first-frame fallback for scene poster.');
+          }
           setResults(
             (res.artifacts ?? []).map((a) => ({
               name: a.filename,
@@ -282,10 +286,12 @@ export function Playground({ defaultTab = 'trim' }: { defaultTab?: Operation }) 
           const res = await apiPost<ShotResult[]>('/v1/shots', file);
           if (!res.ok) throw new Error(res.error);
           const data = res.data as ShotResult[] | undefined;
-          setJsonOut(JSON.stringify(data ?? [], null, 2));
-          if (!data?.length) {
-            setJsonOut('[]\n\nNo scene cuts detected in this video.');
-          }
+          const lines = JSON.stringify(data ?? [], null, 2);
+          setJsonOut(
+            !data?.length
+              ? `${lines}\n\nNo scene cuts detected in this video.`
+              : lines,
+          );
           break;
         }
         case 'editlist': {
@@ -343,7 +349,7 @@ export function Playground({ defaultTab = 'trim' }: { defaultTab?: Operation }) 
           <p className="text-[var(--foreground)]">
             {tab === 'concat'
               ? files.length
-                ? `${files.length} files selected`
+                ? `${files.length} files: ${files.map((f) => f.name).join(', ')}`
                 : 'Drop multiple videos or click to browse'
               : file
                 ? file.name

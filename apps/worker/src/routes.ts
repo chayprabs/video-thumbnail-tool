@@ -1,6 +1,6 @@
 import { createReadStream } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
-import { join, extname } from 'node:path';
+import { readFile, stat, writeFile } from 'node:fs/promises';
+import { basename, join, extname } from 'node:path';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { stream } from 'hono/streaming';
@@ -30,12 +30,12 @@ import {
   trimVideo,
 } from './ffmpeg.js';
 import {
-  fileExists,
   isResponse,
   mimeForFilename,
   parsePayload,
   parseRemuxFormat,
   readMultipart,
+  resolveArtifactPath,
   sanitizeError,
   validateTrimRequest,
 } from './http-utils.js';
@@ -63,6 +63,7 @@ function toArtifacts(jobId: string, filenames: string[]) {
 }
 
 app.get('/health', (c) => c.json({ ok: true, service: 'clip-tools-worker' }));
+app.get('/v1/health', (c) => c.json({ ok: true, service: 'clip-tools-worker' }));
 
 app.post('/v1/probe', async (c) => {
   const form = await readMultipart(c);
@@ -175,7 +176,7 @@ app.post('/v1/thumbnails', async (c) => {
   const ctx = await createJobContext(file.name);
   try {
     await saveUpload(file, ctx.inputPath);
-    const paths = await generateThumbnails(ctx.inputPath, ctx.outputDir, body);
+    const { paths, warned } = await generateThumbnails(ctx.inputPath, ctx.outputDir, body);
     if (paths.length === 0) {
       return c.json({ ok: false, error: 'no thumbnails generated' }, 422);
     }
@@ -183,7 +184,7 @@ app.post('/v1/thumbnails', async (c) => {
       const name = p.split('/').pop()!;
       return { filename: name, mimeType: mimeForFilename(name), url: artifactUrl(ctx.jobId, name) };
     });
-    return c.json({ ok: true, jobId: ctx.jobId, artifacts });
+    return c.json({ ok: true, jobId: ctx.jobId, warned, artifacts });
   } catch (e) {
     return c.json({ ok: false, error: sanitizeError(e) }, 500);
   } finally {
@@ -293,22 +294,28 @@ app.post('/v1/edit-list', async (c) => {
 
 app.get('/v1/artifacts/:jobId/:filename', async (c) => {
   const { jobId, filename } = c.req.param();
-  const base = join('/tmp', 'clip-tools', jobId, 'out', decodeURIComponent(filename));
-  if (!(await fileExists(base))) {
+  const safePath = await resolveArtifactPath(jobId, filename);
+  if (!safePath) {
     return c.json({ ok: false, error: 'artifact not found' }, 404);
   }
-  const mime = mimeForFilename(filename);
+  const safeName = basename(decodeURIComponent(filename));
+  const mime = mimeForFilename(safeName);
+  const fileStat = await stat(safePath);
+
+  if (fileStat.size <= 200 * 1024 * 1024) {
+    const buf = await readFile(safePath);
+    c.header('Content-Type', mime);
+    c.header('Content-Disposition', `attachment; filename="${safeName}"`);
+    return c.body(buf);
+  }
+
   c.header('Content-Type', mime);
-  c.header('Content-Disposition', `attachment; filename="${decodeURIComponent(filename)}"`);
+  c.header('Content-Disposition', `attachment; filename="${safeName}"`);
   return stream(c, async (s) => {
-    await new Promise<void>((resolve, reject) => {
-      const rs = createReadStream(base);
-      rs.on('data', (chunk) => {
-        void s.write(chunk);
-      });
-      rs.on('end', () => resolve());
-      rs.on('error', reject);
-    });
+    const rs = createReadStream(safePath);
+    for await (const chunk of rs) {
+      await s.write(chunk);
+    }
   });
 });
 

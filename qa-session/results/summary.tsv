@@ -1,0 +1,12 @@
+1|PASS|concat 2 reencode:false
+2|PASS|concat 2 reencode:true
+3|PASS|concat 3 files
+4|PASS|thumbnails {"at":"00:00:01"}
+5|PASS|thumbnails {"everyMs":1000}
+6|PASS|thumbnails sceneAware (non-empty)
+7|PASS|thumbnails at+everyMs+sceneAware
+8|PASS|contactsheet 2x3 scale200
+9|PASS|contactsheet 4x4 scale320
+10|PASS|sprites 3x4 intervalSec:1 (VTT in duration, cues=5)
+11|PASS|sprites 10x10 interval2 8s (max VTT 8.0 <= 8.000000, cues=4)
+12|PASS|empty thumbnails {} -> default frame at 0 (ok:true)

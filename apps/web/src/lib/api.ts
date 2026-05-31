@@ -13,6 +13,7 @@ export async function apiPost<T>(
     artifacts?: Array<{ filename: string; mimeType: string; url: string }>;
     warned?: boolean;
     transcoded?: boolean;
+    data?: T;
   }
 > {
   const form = new FormData();

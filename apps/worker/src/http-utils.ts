@@ -1,5 +1,5 @@
-import { access, stat } from 'node:fs/promises';
-import { extname } from 'node:path';
+import { access, realpath, stat } from 'node:fs/promises';
+import { basename, extname, resolve } from 'node:path';
 import type { Context } from 'hono';
 import type { VideoFormat } from '@clip-tools/shared-types';
 import type { TrimRequest } from '@clip-tools/shared-types';
@@ -88,5 +88,38 @@ export async function fileExists(path: string): Promise<boolean> {
     return s.size > 0;
   } catch {
     return false;
+  }
+}
+
+const JOB_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** Resolve artifact path safely; returns null if invalid or outside job out dir. */
+export async function resolveArtifactPath(
+  jobId: string,
+  filename: string,
+): Promise<string | null> {
+  if (!JOB_ID_RE.test(jobId)) return null;
+
+  const decoded = decodeURIComponent(filename);
+  const safeName = basename(decoded);
+  if (!safeName || !/^[a-zA-Z0-9._-]+$/.test(safeName)) return null;
+
+  const outDir = resolve('/tmp', 'clip-tools', jobId, 'out');
+  const candidate = resolve(outDir, safeName);
+
+  if (!candidate.startsWith(outDir + '/') && candidate !== outDir) {
+    return null;
+  }
+
+  try {
+    const real = await realpath(candidate);
+    const realOut = await realpath(outDir);
+    if (!real.startsWith(realOut + '/') && real !== realOut) return null;
+    const s = await stat(real);
+    if (!s.isFile() || s.size === 0) return null;
+    return real;
+  } catch {
+    return null;
   }
 }

@@ -1,0 +1,14 @@
+1|PASS|POST /v1/probe
+2|PASS|POST /v1/clip stream copy single
+3|PASS|POST /v1/clip copy:false re-encode
+4|PASS|POST /v1/clip multi-segment copy
+5|PASS|POST /v1/clip multi-segment copy:false
+6|PASS|POST /v1/remux mp4/mkv/webm/mov
+7|PASS|Invalid inverted trim 400
+8|PASS|Invalid JSON 400
+9|PASS|Missing file 400
+10|PASS|Fake artifact 404
+11|PASS|Download artifacts Content-Type and size>0
+12|FAIL|Web proxy GET /api/v1/health (404)
+12b|PASS|Web proxy POST /api/v1/probe (200)
+import|BLOCKED|POST /api/import on :3000 (stale Next; works on :3001 after rebuild)

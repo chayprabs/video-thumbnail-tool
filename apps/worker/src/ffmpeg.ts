@@ -210,8 +210,9 @@ export async function generateThumbnails(
   inputPath: string,
   outputDir: string,
   req: ThumbnailRequest,
-): Promise<string[]> {
+): Promise<{ paths: string[]; warned?: boolean }> {
   const outputs: string[] = [];
+  let warned = false;
   const probe = await runFfprobe(inputPath);
 
   if (req.at) {
@@ -244,6 +245,7 @@ export async function generateThumbnails(
 
   if (req.sceneAware) {
     const out = join(outputDir, 'thumb_scene.jpg');
+    let sceneOk = false;
     try {
       await runFfmpeg([
         '-i',
@@ -256,22 +258,24 @@ export async function generateThumbnails(
         '2',
         out,
       ]);
+      sceneOk = await fileExists(out);
     } catch {
-      // fallback: first frame
+      sceneOk = false;
     }
-    if (!(await fileExists(out))) {
+    if (!sceneOk) {
       await runFfmpeg(['-ss', '0', '-i', inputPath, '-frames:v', '1', '-q:v', '2', out]);
+      warned = true;
     }
     await pushIfExists(outputs, out);
   }
 
   if (!req.at && !req.everyMs && !req.sceneAware) {
-    const out = join(outputDir, 'thumb_at.jpg');
+    const out = join(outputDir, 'thumb_default.jpg');
     await runFfmpeg(['-ss', '0', '-i', inputPath, '-frames:v', '1', '-q:v', '2', out]);
     await pushIfExists(outputs, out);
   }
 
-  return outputs;
+  return { paths: outputs, warned: warned || undefined };
 }
 
 export async function generateContactSheet(
@@ -299,37 +303,40 @@ export async function generateSpriteSheet(
   outputDir: string,
   req: SpriteSheetRequest,
 ): Promise<{ image: string; vtt: string }> {
-  const interval = req.intervalSec ?? 2;
-  const total = req.rows * req.cols;
+  const interval = Math.max(0.5, req.intervalSec ?? 2);
   const probe = await runFfprobe(inputPath);
-  const duration = probe.duration || interval * total;
+  const duration = probe.duration || interval;
+  const maxCells = Math.max(1, Math.min(req.rows * req.cols, Math.ceil(duration / interval)));
+  const cols = Math.min(req.cols, maxCells);
+  const rows = Math.min(req.rows, Math.ceil(maxCells / cols));
+  const frameCount = Math.min(maxCells, rows * cols);
+
   const videoStream = probe.streams.find((s) => s.codec_type === 'video');
   const w = videoStream?.width ?? 320;
   const h = videoStream?.height ?? 180;
-  const thumbW = Math.max(1, Math.floor(w / req.cols));
+  const thumbW = Math.max(1, Math.floor(w / cols));
   const thumbH = Math.max(1, Math.floor(h * (thumbW / w)));
   const image = join(outputDir, 'sprite.jpg');
   const vtt = join(outputDir, 'sprite.vtt');
 
-  const sampleInterval = Math.max(interval, duration / total);
+  const sampleInterval = Math.max(0.25, duration / frameCount);
   await runFfmpeg([
     '-i',
     inputPath,
     '-vf',
-    `fps=1/${sampleInterval},scale=${thumbW}:-1,tile=${req.cols}x${req.rows}`,
+    `fps=1/${sampleInterval},scale=${thumbW}:-1,tile=${cols}x${rows}`,
     '-frames:v',
     '1',
     image,
   ]);
 
   let vttContent = 'WEBVTT\n\n';
-  const cueCount = Math.min(total, Math.max(1, Math.ceil(duration / interval)));
-  for (let i = 0; i < cueCount; i++) {
+  for (let i = 0; i < frameCount; i++) {
     const start = i * interval;
     const end = Math.min(start + interval, duration);
     if (start >= duration) break;
-    const col = i % req.cols;
-    const row = Math.floor(i / req.cols);
+    const col = i % cols;
+    const row = Math.floor(i / cols);
     const x = col * thumbW;
     const y = row * thumbH;
     vttContent += `${formatVttTime(start)} --> ${formatVttTime(end)}\n`;
