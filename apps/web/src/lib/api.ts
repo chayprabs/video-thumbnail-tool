@@ -13,7 +13,7 @@ export async function apiPost<T>(
   } else {
     form.append('file', file);
   }
-  if (payload) form.append('payload', JSON.stringify(payload));
+  if (payload !== undefined) form.append('payload', JSON.stringify(payload));
 
   const res = await fetch(`${API_BASE}${endpoint}`, { method: 'POST', body: form });
   if (!res.ok) {

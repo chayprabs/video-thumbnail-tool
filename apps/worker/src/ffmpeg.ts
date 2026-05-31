@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { readFile, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type {
@@ -12,6 +12,7 @@ import type {
   TrimRequest,
   VideoFormat,
 } from '@clip-tools/shared-types';
+import { fileExists } from './http-utils.js';
 
 const exec = promisify(execFile);
 
@@ -79,15 +80,25 @@ function timeToSeconds(t: string): number {
   return parseFloat(t);
 }
 
+function escapeConcatPath(p: string): string {
+  return p.replace(/'/g, "'\\''");
+}
+
+async function pushIfExists(outputs: string[], path: string): Promise<void> {
+  if (await fileExists(path)) outputs.push(path);
+}
+
 export async function trimVideo(
   inputPath: string,
   outputPath: string,
   req: TrimRequest,
 ): Promise<void> {
+  const useCopy = req.copy !== false;
+
   if (req.segments.length === 1) {
     const seg = req.segments[0];
     const duration = timeToSeconds(seg.out) - timeToSeconds(seg.in);
-    if (req.copy !== false) {
+    if (useCopy) {
       await runFfmpeg(['-ss', seg.in, '-i', inputPath, '-t', String(duration), '-c', 'copy', outputPath]);
     } else {
       await runFfmpeg(['-ss', seg.in, '-i', inputPath, '-t', String(duration), outputPath]);
@@ -100,14 +111,21 @@ export async function trimVideo(
     const seg = req.segments[i];
     const part = outputPath.replace(/\.[^.]+$/, `_part${i}.mp4`);
     const duration = timeToSeconds(seg.out) - timeToSeconds(seg.in);
-    await runFfmpeg(['-ss', seg.in, '-i', inputPath, '-t', String(duration), '-c', 'copy', part]);
+    const args = ['-ss', seg.in, '-i', inputPath, '-t', String(duration)];
+    if (useCopy) args.push('-c', 'copy');
+    args.push(part);
+    await runFfmpeg(args);
     parts.push(part);
   }
 
   const listPath = outputPath + '.txt';
-  const listContent = parts.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join('\n');
+  const listContent = parts.map((p) => `file '${escapeConcatPath(p)}'`).join('\n');
   await writeFile(listPath, listContent);
-  await runFfmpeg(['-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', outputPath]);
+  if (useCopy) {
+    await runFfmpeg(['-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', outputPath]);
+  } else {
+    await runFfmpeg(['-f', 'concat', '-safe', '0', '-i', listPath, '-c:v', 'libx264', '-c:a', 'aac', outputPath]);
+  }
 }
 
 export async function concatVideos(
@@ -119,11 +137,23 @@ export async function concatVideos(
   const videoCodecs = probes.map((p) => p.streams.find((s) => s.codec_type === 'video')?.codec_name);
   const mismatch = new Set(videoCodecs.filter(Boolean)).size > 1;
   const listPath = outputPath + '.txt';
-  const listContent = inputPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join('\n');
+  const listContent = inputPaths.map((p) => `file '${escapeConcatPath(p)}'`).join('\n');
   await writeFile(listPath, listContent);
 
   if (mismatch && !reencode) {
-    await runFfmpeg(['-f', 'concat', '-safe', '0', '-i', listPath, outputPath]);
+    await runFfmpeg([
+      '-f',
+      'concat',
+      '-safe',
+      '0',
+      '-i',
+      listPath,
+      '-c:v',
+      'libx264',
+      '-c:a',
+      'aac',
+      outputPath,
+    ]);
     return { warned: true };
   }
   if (reencode || mismatch) {
@@ -182,50 +212,65 @@ export async function generateThumbnails(
   req: ThumbnailRequest,
 ): Promise<string[]> {
   const outputs: string[] = [];
+  const probe = await runFfprobe(inputPath);
+
   if (req.at) {
     const out = join(outputDir, 'thumb_at.jpg');
     await runFfmpeg(['-ss', req.at, '-i', inputPath, '-frames:v', '1', '-q:v', '2', out]);
-    outputs.push(out);
+    await pushIfExists(outputs, out);
   }
+
   if (req.everyMs) {
-    const out = join(outputDir, 'thumb_strip_%03d.jpg');
+    const outPattern = join(outputDir, 'thumb_strip_%03d.jpg');
     const fps = 1000 / req.everyMs;
+    const maxFrames = Math.min(60, Math.max(1, Math.ceil(probe.duration * fps)));
     await runFfmpeg([
       '-i',
       inputPath,
       '-vf',
       `fps=${fps}`,
       '-frames:v',
-      '20',
+      String(maxFrames),
       '-q:v',
       '2',
-      out,
+      outPattern,
     ]);
-    for (let i = 1; i <= 20; i++) {
+    for (let i = 1; i <= maxFrames; i++) {
       const p = join(outputDir, `thumb_strip_${String(i).padStart(3, '0')}.jpg`);
-      try {
-        await readFile(p);
-        outputs.push(p);
-      } catch {
-        break;
-      }
+      if (await fileExists(p)) outputs.push(p);
+      else break;
     }
   }
+
   if (req.sceneAware) {
     const out = join(outputDir, 'thumb_scene.jpg');
-    await runFfmpeg([
-      '-i',
-      inputPath,
-      '-vf',
-      "select='gt(scene,0.4)',scale=iw:ih",
-      '-frames:v',
-      '1',
-      '-q:v',
-      '2',
-      out,
-    ]);
-    outputs.push(out);
+    try {
+      await runFfmpeg([
+        '-i',
+        inputPath,
+        '-vf',
+        "select='gt(scene,0.25)',scale=iw:ih",
+        '-frames:v',
+        '1',
+        '-q:v',
+        '2',
+        out,
+      ]);
+    } catch {
+      // fallback: first frame
+    }
+    if (!(await fileExists(out))) {
+      await runFfmpeg(['-ss', '0', '-i', inputPath, '-frames:v', '1', '-q:v', '2', out]);
+    }
+    await pushIfExists(outputs, out);
   }
+
+  if (!req.at && !req.everyMs && !req.sceneAware) {
+    const out = join(outputDir, 'thumb_at.jpg');
+    await runFfmpeg(['-ss', '0', '-i', inputPath, '-frames:v', '1', '-q:v', '2', out]);
+    await pushIfExists(outputs, out);
+  }
+
   return outputs;
 }
 
@@ -236,11 +281,13 @@ export async function generateContactSheet(
 ): Promise<void> {
   const total = req.rows * req.cols;
   const scale = req.scale ?? 320;
+  const probe = await runFfprobe(inputPath);
+  const interval = Math.max(0.5, probe.duration / total);
   await runFfmpeg([
     '-i',
     inputPath,
     '-vf',
-    `fps=1/${Math.max(1, Math.floor(10 / total))},scale=${scale}:-1,tile=${req.cols}x${req.rows}:padding=4:color=white,drawtext=fontsize=14:fontcolor=black:x=4:y=4:text='%{pts\\:hms}'`,
+    `fps=1/${interval},scale=${scale}:-1,tile=${req.cols}x${req.rows}:padding=4:color=white,drawtext=fontsize=14:fontcolor=black:x=4:y=4:text='%{pts\\:hms}'`,
     '-frames:v',
     '1',
     outputPath,
@@ -255,33 +302,38 @@ export async function generateSpriteSheet(
   const interval = req.intervalSec ?? 2;
   const total = req.rows * req.cols;
   const probe = await runFfprobe(inputPath);
+  const duration = probe.duration || interval * total;
   const videoStream = probe.streams.find((s) => s.codec_type === 'video');
   const w = videoStream?.width ?? 320;
   const h = videoStream?.height ?? 180;
-  const thumbW = Math.floor(w / req.cols);
+  const thumbW = Math.max(1, Math.floor(w / req.cols));
+  const thumbH = Math.max(1, Math.floor(h * (thumbW / w)));
   const image = join(outputDir, 'sprite.jpg');
   const vtt = join(outputDir, 'sprite.vtt');
 
+  const sampleInterval = Math.max(interval, duration / total);
   await runFfmpeg([
     '-i',
     inputPath,
     '-vf',
-    `fps=1/${interval},scale=${thumbW}:-1,tile=${req.cols}x${req.rows}`,
+    `fps=1/${sampleInterval},scale=${thumbW}:-1,tile=${req.cols}x${req.rows}`,
     '-frames:v',
     '1',
     image,
   ]);
 
   let vttContent = 'WEBVTT\n\n';
-  for (let i = 0; i < total; i++) {
+  const cueCount = Math.min(total, Math.max(1, Math.ceil(duration / interval)));
+  for (let i = 0; i < cueCount; i++) {
     const start = i * interval;
-    const end = start + interval;
+    const end = Math.min(start + interval, duration);
+    if (start >= duration) break;
     const col = i % req.cols;
     const row = Math.floor(i / req.cols);
     const x = col * thumbW;
-    const y = row * Math.floor(h * (thumbW / w));
+    const y = row * thumbH;
     vttContent += `${formatVttTime(start)} --> ${formatVttTime(end)}\n`;
-    vttContent += `sprite.jpg#xywh=${x},${y},${thumbW},${Math.floor(h * (thumbW / w))}\n\n`;
+    vttContent += `sprite.jpg#xywh=${x},${y},${thumbW},${thumbH}\n\n`;
   }
   await writeFile(vtt, vttContent);
   return { image, vtt };
@@ -319,9 +371,6 @@ export async function detectShots(inputPath: string): Promise<ShotResult[]> {
       confidence: 0.85,
     });
   }
-  if (results.length === 0) {
-    results.push({ timestamp: 0, confidence: 1 });
-  }
   return results;
 }
 
@@ -347,6 +396,6 @@ export async function renderEditList(
     parts.push(part);
   }
   const listPath = outputPath + '.txt';
-  await writeFile(listPath, parts.map((p) => `file '${p}'`).join('\n'));
+  await writeFile(listPath, parts.map((p) => `file '${escapeConcatPath(p)}'`).join('\n'));
   await runFfmpeg(['-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', outputPath]);
 }

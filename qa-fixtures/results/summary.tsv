@@ -1,0 +1,11 @@
+1|PASS|POST /v1/concat reencode:false
+2|PASS|POST /v1/concat reencode:true
+3|PASS|POST /v1/thumbnails at
+4|PASS|POST /v1/thumbnails everyMs:1000
+5|FAIL|POST /v1/thumbnails sceneAware
+6|FAIL|POST /v1/thumbnails at+sceneAware
+7|PASS|POST /v1/contactsheet 2x3 scale200
+8|PASS|POST /v1/contactsheet 5x5
+9|PASS|POST /v1/sprites 3x4 intervalSec:1
+10|PASS|sprite.vtt WEBVTT xywh
+11|FAIL|artifacts non-empty

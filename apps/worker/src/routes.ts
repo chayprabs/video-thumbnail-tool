@@ -29,6 +29,16 @@ import {
   runFfprobe,
   trimVideo,
 } from './ffmpeg.js';
+import {
+  fileExists,
+  isResponse,
+  mimeForFilename,
+  parsePayload,
+  parseRemuxFormat,
+  readMultipart,
+  sanitizeError,
+  validateTrimRequest,
+} from './http-utils.js';
 
 const app = new Hono();
 
@@ -44,27 +54,42 @@ function artifactUrl(jobId: string, name: string): string {
   return `/v1/artifacts/${jobId}/${encodeURIComponent(name)}`;
 }
 
+function toArtifacts(jobId: string, filenames: string[]) {
+  return filenames.map((filename) => ({
+    filename,
+    mimeType: mimeForFilename(filename),
+    url: artifactUrl(jobId, filename),
+  }));
+}
+
 app.get('/health', (c) => c.json({ ok: true, service: 'clip-tools-worker' }));
 
 app.post('/v1/probe', async (c) => {
-  const form = await c.req.formData();
+  const form = await readMultipart(c);
+  if (isResponse(form)) return form;
   const file = form.get('file') as File | null;
-  if (!file) return c.json({ ok: false, error: 'file required' }, 400);
+  if (!file || file.size === 0) return c.json({ ok: false, error: 'file required' }, 400);
   const ctx = await createJobContext(file.name);
   try {
     await saveUpload(file, ctx.inputPath);
     const probe = await runFfprobe(ctx.inputPath);
     return c.json({ ok: true, data: probe, jobId: ctx.jobId });
+  } catch (e) {
+    return c.json({ ok: false, error: sanitizeError(e) }, 500);
   } finally {
     await scheduleCleanup(ctx.dir);
   }
 });
 
 app.post('/v1/clip', async (c) => {
-  const form = await c.req.formData();
+  const form = await readMultipart(c);
+  if (isResponse(form)) return form;
   const file = form.get('file') as File | null;
-  const body = JSON.parse((form.get('payload') as string) || '{}') as TrimRequest;
-  if (!file || !body.segments?.length) return c.json({ ok: false, error: 'file and segments required' }, 400);
+  const body = parsePayload<TrimRequest>(form.get('payload'));
+  if (isResponse(body)) return body;
+  const trimErr = validateTrimRequest(body);
+  if (trimErr) return c.json({ ok: false, error: trimErr }, 400);
+  if (!file || file.size === 0) return c.json({ ok: false, error: 'file and segments required' }, 400);
   const ctx = await createJobContext(file.name);
   try {
     await saveUpload(file, ctx.inputPath);
@@ -73,19 +98,21 @@ app.post('/v1/clip', async (c) => {
     return c.json({
       ok: true,
       jobId: ctx.jobId,
-      artifacts: [{ filename: 'trimmed.mp4', mimeType: 'video/mp4', url: artifactUrl(ctx.jobId, 'trimmed.mp4') }],
+      artifacts: toArtifacts(ctx.jobId, ['trimmed.mp4']),
     });
   } catch (e) {
-    return c.json({ ok: false, error: e instanceof Error ? e.message : 'trim failed' }, 500);
+    return c.json({ ok: false, error: sanitizeError(e) }, 500);
   } finally {
     await scheduleCleanup(ctx.dir, 3600000);
   }
 });
 
 app.post('/v1/concat', async (c) => {
-  const form = await c.req.formData();
+  const form = await readMultipart(c);
+  if (isResponse(form)) return form;
   const files = form.getAll('files') as File[];
-  const body = JSON.parse((form.get('payload') as string) || '{}') as ConcatRequest;
+  const body = parsePayload<ConcatRequest>(form.get('payload'));
+  if (isResponse(body)) return body;
   if (files.length < 2) return c.json({ ok: false, error: 'at least 2 files required' }, 400);
   const ctx = await createJobContext('concat.mp4');
   try {
@@ -101,127 +128,149 @@ app.post('/v1/concat', async (c) => {
       ok: true,
       warned,
       jobId: ctx.jobId,
-      artifacts: [{ filename: 'concat.mp4', mimeType: 'video/mp4', url: artifactUrl(ctx.jobId, 'concat.mp4') }],
+      artifacts: toArtifacts(ctx.jobId, ['concat.mp4']),
     });
   } catch (e) {
-    return c.json({ ok: false, error: e instanceof Error ? e.message : 'concat failed' }, 500);
+    return c.json({ ok: false, error: sanitizeError(e) }, 500);
   } finally {
     await scheduleCleanup(ctx.dir, 3600000);
   }
 });
 
 app.post('/v1/remux', async (c) => {
-  const form = await c.req.formData();
+  const form = await readMultipart(c);
+  if (isResponse(form)) return form;
   const file = form.get('file') as File | null;
-  const body = JSON.parse((form.get('payload') as string) || '{}') as RemuxRequest;
-  if (!file || !body.format) return c.json({ ok: false, error: 'file and format required' }, 400);
+  const body = parsePayload<RemuxRequest>(form.get('payload'));
+  if (isResponse(body)) return body;
+  const format = parseRemuxFormat(body.format);
+  if (!format) return c.json({ ok: false, error: 'format must be mp4, mkv, webm, or mov' }, 400);
+  if (!file || file.size === 0) return c.json({ ok: false, error: 'file and format required' }, 400);
   const ctx = await createJobContext(file.name);
   try {
     await saveUpload(file, ctx.inputPath);
-    const out = join(ctx.outputDir, `remux.${body.format}`);
-    const { transcoded } = await remuxVideo(ctx.inputPath, out, body);
+    const filename = `remux.${format}`;
+    const out = join(ctx.outputDir, filename);
+    const { transcoded } = await remuxVideo(ctx.inputPath, out, { format });
     return c.json({
       ok: true,
       transcoded,
       jobId: ctx.jobId,
-      artifacts: [{ filename: `remux.${body.format}`, mimeType: 'video/mp4', url: artifactUrl(ctx.jobId, `remux.${body.format}`) }],
+      artifacts: toArtifacts(ctx.jobId, [filename]),
     });
   } catch (e) {
-    return c.json({ ok: false, error: e instanceof Error ? e.message : 'remux failed' }, 500);
+    return c.json({ ok: false, error: sanitizeError(e) }, 500);
   } finally {
     await scheduleCleanup(ctx.dir, 3600000);
   }
 });
 
 app.post('/v1/thumbnails', async (c) => {
-  const form = await c.req.formData();
+  const form = await readMultipart(c);
+  if (isResponse(form)) return form;
   const file = form.get('file') as File | null;
-  const body = JSON.parse((form.get('payload') as string) || '{}') as ThumbnailRequest;
-  if (!file) return c.json({ ok: false, error: 'file required' }, 400);
+  const body = parsePayload<ThumbnailRequest>(form.get('payload'));
+  if (isResponse(body)) return body;
+  if (!file || file.size === 0) return c.json({ ok: false, error: 'file required' }, 400);
   const ctx = await createJobContext(file.name);
   try {
     await saveUpload(file, ctx.inputPath);
     const paths = await generateThumbnails(ctx.inputPath, ctx.outputDir, body);
+    if (paths.length === 0) {
+      return c.json({ ok: false, error: 'no thumbnails generated' }, 422);
+    }
     const artifacts = paths.map((p) => {
       const name = p.split('/').pop()!;
-      return { filename: name, mimeType: 'image/jpeg', url: artifactUrl(ctx.jobId, name) };
+      return { filename: name, mimeType: mimeForFilename(name), url: artifactUrl(ctx.jobId, name) };
     });
     return c.json({ ok: true, jobId: ctx.jobId, artifacts });
   } catch (e) {
-    return c.json({ ok: false, error: e instanceof Error ? e.message : 'thumbnails failed' }, 500);
+    return c.json({ ok: false, error: sanitizeError(e) }, 500);
   } finally {
     await scheduleCleanup(ctx.dir, 3600000);
   }
 });
 
 app.post('/v1/contactsheet', async (c) => {
-  const form = await c.req.formData();
+  const form = await readMultipart(c);
+  if (isResponse(form)) return form;
   const file = form.get('file') as File | null;
-  const body = JSON.parse((form.get('payload') as string) || '{"rows":3,"cols":4}') as ContactSheetRequest;
-  if (!file) return c.json({ ok: false, error: 'file required' }, 400);
+  const body = parsePayload<ContactSheetRequest>(form.get('payload'));
+  if (isResponse(body)) return body;
+  const rows = body.rows ?? 3;
+  const cols = body.cols ?? 4;
+  if (!file || file.size === 0) return c.json({ ok: false, error: 'file required' }, 400);
   const ctx = await createJobContext(file.name);
   try {
     await saveUpload(file, ctx.inputPath);
     const out = join(ctx.outputDir, 'contact.jpg');
-    await generateContactSheet(ctx.inputPath, out, body);
+    await generateContactSheet(ctx.inputPath, out, { rows, cols, scale: body.scale });
     return c.json({
       ok: true,
       jobId: ctx.jobId,
-      artifacts: [{ filename: 'contact.jpg', mimeType: 'image/jpeg', url: artifactUrl(ctx.jobId, 'contact.jpg') }],
+      artifacts: toArtifacts(ctx.jobId, ['contact.jpg']),
     });
   } catch (e) {
-    return c.json({ ok: false, error: e instanceof Error ? e.message : 'contactsheet failed' }, 500);
+    return c.json({ ok: false, error: sanitizeError(e) }, 500);
   } finally {
     await scheduleCleanup(ctx.dir, 3600000);
   }
 });
 
 app.post('/v1/sprites', async (c) => {
-  const form = await c.req.formData();
+  const form = await readMultipart(c);
+  if (isResponse(form)) return form;
   const file = form.get('file') as File | null;
-  const body = JSON.parse((form.get('payload') as string) || '{"rows":5,"cols":10}') as SpriteSheetRequest;
-  if (!file) return c.json({ ok: false, error: 'file required' }, 400);
+  const body = parsePayload<SpriteSheetRequest>(form.get('payload'));
+  if (isResponse(body)) return body;
+  const rows = body.rows ?? 5;
+  const cols = body.cols ?? 10;
+  if (!file || file.size === 0) return c.json({ ok: false, error: 'file required' }, 400);
   const ctx = await createJobContext(file.name);
   try {
     await saveUpload(file, ctx.inputPath);
-    const { image, vtt } = await generateSpriteSheet(ctx.inputPath, ctx.outputDir, body);
+    await generateSpriteSheet(ctx.inputPath, ctx.outputDir, {
+      rows,
+      cols,
+      intervalSec: body.intervalSec,
+    });
     return c.json({
       ok: true,
       jobId: ctx.jobId,
-      artifacts: [
-        { filename: 'sprite.jpg', mimeType: 'image/jpeg', url: artifactUrl(ctx.jobId, 'sprite.jpg') },
-        { filename: 'sprite.vtt', mimeType: 'text/vtt', url: artifactUrl(ctx.jobId, 'sprite.vtt') },
-      ],
-      paths: { image, vtt },
+      artifacts: toArtifacts(ctx.jobId, ['sprite.jpg', 'sprite.vtt']),
     });
   } catch (e) {
-    return c.json({ ok: false, error: e instanceof Error ? e.message : 'sprites failed' }, 500);
+    return c.json({ ok: false, error: sanitizeError(e) }, 500);
   } finally {
     await scheduleCleanup(ctx.dir, 3600000);
   }
 });
 
 app.post('/v1/shots', async (c) => {
-  const form = await c.req.formData();
+  const form = await readMultipart(c);
+  if (isResponse(form)) return form;
   const file = form.get('file') as File | null;
-  if (!file) return c.json({ ok: false, error: 'file required' }, 400);
+  if (!file || file.size === 0) return c.json({ ok: false, error: 'file required' }, 400);
   const ctx = await createJobContext(file.name);
   try {
     await saveUpload(file, ctx.inputPath);
     const shots = await detectShots(ctx.inputPath);
     return c.json({ ok: true, data: shots, jobId: ctx.jobId });
   } catch (e) {
-    return c.json({ ok: false, error: e instanceof Error ? e.message : 'shots failed' }, 500);
+    return c.json({ ok: false, error: sanitizeError(e) }, 500);
   } finally {
     await scheduleCleanup(ctx.dir);
   }
 });
 
 app.post('/v1/edit-list', async (c) => {
-  const form = await c.req.formData();
+  const form = await readMultipart(c);
+  if (isResponse(form)) return form;
   const file = form.get('file') as File | null;
-  const body = JSON.parse((form.get('payload') as string) || '{}') as EditListRequest;
-  if (!file || !body.timeline?.tracks?.length) {
+  const body = parsePayload<EditListRequest>(form.get('payload'));
+  if (isResponse(body)) return body;
+  if (!file || file.size === 0) return c.json({ ok: false, error: 'file and timeline required' }, 400);
+  if (!body.timeline?.tracks?.length) {
     return c.json({ ok: false, error: 'file and timeline required' }, 400);
   }
   const ctx = await createJobContext(file.name);
@@ -233,36 +282,34 @@ app.post('/v1/edit-list', async (c) => {
     return c.json({
       ok: true,
       jobId: ctx.jobId,
-      artifacts: [{ filename: 'edit-list.mp4', mimeType: 'video/mp4', url: artifactUrl(ctx.jobId, 'edit-list.mp4') }],
+      artifacts: toArtifacts(ctx.jobId, ['edit-list.mp4']),
     });
   } catch (e) {
-    return c.json({ ok: false, error: e instanceof Error ? e.message : 'edit-list failed' }, 500);
+    return c.json({ ok: false, error: sanitizeError(e) }, 500);
   } finally {
     await scheduleCleanup(ctx.dir, 3600000);
   }
 });
 
-const artifactStore = new Map<string, string>();
-
-
-// Store artifact paths in-memory keyed by job (simplified; production would use object storage)
-export function registerArtifact(jobId: string, name: string, path: string): void {
-  artifactStore.set(`${jobId}/${name}`, path);
-}
-
 app.get('/v1/artifacts/:jobId/:filename', async (c) => {
   const { jobId, filename } = c.req.param();
   const base = join('/tmp', 'clip-tools', jobId, 'out', decodeURIComponent(filename));
-  try {
-    return stream(c, async (s) => {
-      const rs = createReadStream(base);
-      for await (const chunk of rs) {
-        await s.write(chunk);
-      }
-    });
-  } catch {
+  if (!(await fileExists(base))) {
     return c.json({ ok: false, error: 'artifact not found' }, 404);
   }
+  const mime = mimeForFilename(filename);
+  c.header('Content-Type', mime);
+  c.header('Content-Disposition', `attachment; filename="${decodeURIComponent(filename)}"`);
+  return stream(c, async (s) => {
+    await new Promise<void>((resolve, reject) => {
+      const rs = createReadStream(base);
+      rs.on('data', (chunk) => {
+        void s.write(chunk);
+      });
+      rs.on('end', () => resolve());
+      rs.on('error', reject);
+    });
+  });
 });
 
-export { app, artifactStore };
+export { app };

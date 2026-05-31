@@ -46,6 +46,7 @@ export function Playground({ defaultTab = 'trim' }: { defaultTab?: Operation }) 
   const [contactCols, setContactCols] = useState(4);
   const [spriteRows, setSpriteRows] = useState(5);
   const [spriteCols, setSpriteCols] = useState(10);
+  const [sceneAwareThumb, setSceneAwareThumb] = useState(false);
   const [editJson, setEditJson] = useState(
     JSON.stringify(
       {
@@ -57,6 +58,10 @@ export function Playground({ defaultTab = 'trim' }: { defaultTab?: Operation }) 
       2,
     ),
   );
+
+  useEffect(() => {
+    setTab(defaultTab);
+  }, [defaultTab]);
 
   useEffect(() => {
     if (!file || !videoRef.current) return;
@@ -95,10 +100,30 @@ export function Playground({ defaultTab = 'trim' }: { defaultTab?: Operation }) 
     }
   }, []);
 
+  const switchTab = (next: Operation) => {
+    setTab(next);
+    setError(null);
+    setResults([]);
+    setJsonOut(null);
+    if (next === 'concat') {
+      setFile(null);
+      setProbe(null);
+    } else {
+      setFiles([]);
+    }
+  };
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    const f = e.dataTransfer.files[0];
-    if (f) void onFile(f);
+    const list = e.dataTransfer.files;
+    if (!list?.length) return;
+    if (tab === 'concat') {
+      setFiles(Array.from(list));
+      setFile(null);
+      setProbe(null);
+    } else {
+      void onFile(list[0]);
+    }
   };
 
   const run = async () => {
@@ -153,7 +178,10 @@ export function Playground({ defaultTab = 'trim' }: { defaultTab?: Operation }) 
           break;
         }
         case 'thumbnail': {
-          const res = await apiPost('/v1/thumbnails', file, { at: thumbAt, sceneAware: true });
+          const res = await apiPost('/v1/thumbnails', file, {
+            at: thumbAt,
+            ...(sceneAwareThumb ? { sceneAware: true } : {}),
+          });
           if (!res.ok) throw new Error(res.error);
           setResults(
             (res.artifacts ?? []).map((a) => ({
@@ -283,7 +311,7 @@ export function Playground({ defaultTab = 'trim' }: { defaultTab?: Operation }) 
           <button
             key={t.id}
             type="button"
-            onClick={() => setTab(t.id)}
+            onClick={() => switchTab(t.id)}
             className={`px-3 py-2 text-sm font-medium transition ${
               tab === t.id
                 ? 'border-b-2 border-[var(--accent)] text-[var(--accent)]'
@@ -342,14 +370,24 @@ export function Playground({ defaultTab = 'trim' }: { defaultTab?: Operation }) 
           </label>
         )}
         {tab === 'thumbnail' && (
-          <label className="text-sm">
-            At timecode{' '}
-            <input
-              value={thumbAt}
-              onChange={(e) => setThumbAt(e.target.value)}
-              className="ml-1 rounded border px-2 py-1"
-            />
-          </label>
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <label>
+              At timecode{' '}
+              <input
+                value={thumbAt}
+                onChange={(e) => setThumbAt(e.target.value)}
+                className="ml-1 rounded border px-2 py-1"
+              />
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={sceneAwareThumb}
+                onChange={(e) => setSceneAwareThumb(e.target.checked)}
+              />
+              Scene-aware poster (fallback to first frame)
+            </label>
+          </div>
         )}
         {tab === 'contactsheet' && (
           <div className="flex gap-3 text-sm">
@@ -441,6 +479,16 @@ export function Playground({ defaultTab = 'trim' }: { defaultTab?: Operation }) 
                 )}
                 {r.type.startsWith('video') && (
                   <video src={r.url} controls className="mb-2 max-h-48 rounded border" />
+                )}
+                {r.type.startsWith('text/') && (
+                  <a
+                    href={r.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mb-2 block max-w-xs truncate text-xs text-[var(--muted)]"
+                  >
+                    Preview VTT in new tab
+                  </a>
                 )}
                 <a
                   href={r.url}
